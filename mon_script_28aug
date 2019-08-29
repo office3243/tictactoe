@@ -5,12 +5,14 @@ from selenium.webdriver.common.keys import Keys
 import csv
 import datetime
 import os
-
+from tqdm import tqdm
 
 chrome_driver_path = "chromedriver"
-file_name = input('Enter file name : ')
 base_path = '../files/'
-
+file_name = input('Enter file name : ')
+file_path = base_path + file_name + '-{}.csv'.format(datetime.date.today())
+final_file_path = base_path+'Final-' + file_name + '-{}.csv'.format(datetime.date.today())
+all_data_file_path = base_path + "all_data_csv.csv"
 first_fieldnames = ['name', 'resume_id', 'education', 'location', 'total_experience',
                     'notice_period', 'designation', 'company', 'current_ctc', 'heading',
                     'roles', 'functions', 'skills', 'industry', 'pre_location',
@@ -19,9 +21,9 @@ profile_fieldnames = first_fieldnames + ['phone', 'email', 'extra_details']
 
 
 try:
-    all_data_csv = open(base_path+'all_data_csv.csv', 'r')
+    all_data_csv = open(all_data_file_path, 'r')
 except:
-    all_data_csv = open(base_path+'all_data_csv.csv', 'a')
+    all_data_csv = open(all_data_file_path, 'a')
 
 all_csv_reader = csv.DictReader(all_data_csv)
 
@@ -30,7 +32,7 @@ try:
 except:
     all_resume_id = []
 
-csv_file = open(base_path+file_name + '-{}.csv'.format(datetime.date.today()), 'a', newline='')
+csv_file = open(file_path, 'a', newline='')
 writer = csv.DictWriter(csv_file, fieldnames=first_fieldnames)
 writer.writeheader()
 
@@ -64,16 +66,18 @@ def get_page_range_input():
 def get_profiles():
     captcha_var = 0
     errors = 0
-    p_csv_file = open((base_path+file_name + '-{}.csv'.format(datetime.date.today())), 'r')
-    p_new_file = open((base_path+'Final-' + file_name + '.csv'), 'w', newline='')
+    p_csv_file = open(file_path, 'r')
+    p_new_file = open(final_file_path, 'w', newline='')
     p_writer = csv.DictWriter(p_new_file, fieldnames=profile_fieldnames)
-    all_data_csv = open(base_path+'all_data_csv.csv', 'a', newline='')
+    all_data_csv = open(all_data_file_path, 'a', newline='')
     all_csv_writer = csv.DictWriter(all_data_csv, fieldnames=['resume_id', ])
     all_csv_writer.writeheader()
     p_writer.writeheader()
     p_reader = csv.DictReader(p_csv_file)
     time.sleep(2)
-    for row_index, row in enumerate(p_reader):
+    for row in tqdm(p_reader, ascii=True, desc="PROFILES () : ".format(len(p_reader))):
+    # for row in tqdm(p_reader, ascii=True, desc="PROFILES : "):
+
         link = row.get('link')
         driver.get(link)
         try:
@@ -102,9 +106,6 @@ def get_profiles():
             else:
                 captcha_var += 1
         new_dict = {'phone': phone, 'email': email, 'extra_details': extra_details}
-        new_dict_valid = [True if new_dict[i] == '-' else False for i in new_dict]
-        if all(new_dict_valid):
-            input('check for captcha')
         my_dict = dict(row)
         my_dict.update(new_dict)
         try:
@@ -113,11 +114,6 @@ def get_profiles():
         except Exception as e:
             print('main exception : ', e)
             errors += 1
-        try:
-            if row_index % 50 == 0:
-                print("\t profile - {}".format(row_index))
-        except Exception as e:
-            print(e)
     time.sleep(1)
     print('Total Errors : ', errors)
 
@@ -143,24 +139,26 @@ def page_160_resumes():
 
 
 def page_scroller():
-    time.sleep(0.3)
     html = driver.find_element_by_tag_name('html')
     html.send_keys(Keys.END)
-    time.sleep(0.3)
 
 
 def get_page():
     errors = 0
     duplicates = 0
-
+    input("Seach filters and make sure list page : ")
     page_160_resumes()
-    time.sleep(1)
+    time.sleep(2)
     from_page, to_page = get_page_range_input()
-    for page_number in range(from_page, to_page + 1):
+    for page_number in tqdm(range(from_page, to_page + 1), ascii=True, desc="PAGES : "):
         try:
             if int(driver.find_element_by_class_name("sractivenew").text.strip()) != page_number:
                 if page_number % 5 != 1:
-                    driver.find_elements_by_xpath("//div[@onclick='goToPage({});']".format(page_number))[-1].click()
+                    try:
+                        driver.find_elements_by_xpath("//div[@onclick='goToPage({});']".format(page_number))[-1].click()
+                    except:
+                        driver.find_elements_by_xpath("//div[@onclick='goToPage({});']".format(page_number))[0].click()
+
                 else:
                     driver.find_elements_by_xpath("//a[@href='javascript:goToPage({});']".format(page_number))[
                         -1].click()
@@ -168,11 +166,10 @@ def get_page():
             print(e)
             input('Click to page {} and press ENTER : '.format(page_number))
         time.sleep(2)
-        print('page {} / {}'.format(page_number, to_page))
         page_scroller()
-        time.sleep(1)
+        time.sleep(2.5)
         resumes = driver.find_elements_by_class_name('resumeitem_Section')
-        for r_index, resume in enumerate(resumes):
+        for resume in tqdm(resumes, ascii=True, desc="PAGE {} RESUMES : ".format(page_number), leave=True, position=0):
             name = resume.find_element_by_class_name('namepro').text.strip()
             resume_id = str(resume.get_attribute('id')).replace('row1_', '')
 
@@ -214,11 +211,14 @@ def get_page():
                     total_experince = '--'
                     current_ctc = '--'
                 try:
-                    skills = resume.find_element_by_id('key_skills' + resume_id).text
+                    # css_selector = 'input[id*=key_skill]'
+                    skills = resume.find_element_by_css_selector('span[id*=key_skill]').text
+                    # skills = resume.find_element_by_id('key_skills').text
                 except:
                     skills = '--'
                 try:
-                    pre_location = resume.find_element_by_id('preloc' + resume_id).text
+                    # pre_location = resume.find_element_by_id('preloc' + resume_id).text
+                    pre_location = resume.find_element_by_css_selector('span[id*=preloc]').text
                 except:
                     pre_location = '--'
                 try:
@@ -256,8 +256,6 @@ def get_page():
                     writer.writerow(my_dict)
                 except:
                     errors += 1
-                if ((r_index / len(resumes))*100) % 25 == 0:
-                    print("\t{} %".format((r_index / len(resumes))*100))
             else:
                 duplicates += 1
     print("Duplicates : ", duplicates)
@@ -265,142 +263,18 @@ def get_page():
     get_profiles()
 
 
-def get_page_folder():
-    errors = 0
-    duplicates = 0
-    from_page, to_page = get_page_range_input()
-    for page_number in range(from_page, to_page + 1):
-        page_scroller()
-
-        resumes = driver.find_elements_by_class_name('resumeitem_Section')
-        print(len(resumes))
-        for r_index, resume in enumerate(resumes):
-            try:
-                name = resume.find_element_by_class_name('namepro').text.strip()
-            except:
-                name = '--'
-            try:
-                resume_id = str(resume.get_attribute('id')).replace('row1_', '')
-            except:
-                resume_id = '--'
-            try:
-                heading = resume.find_element_by_class_name('res_h').text
-            except:
-                heading = '--'
-            try:
-                raw_link = resume.find_element_by_class_name('res_h').get_attribute('href')
-                link = raw_link[:raw_link.find(';', raw_link.find('uid'))]
-            except:
-                link = '--'
-            try:
-                designation = resume.find_element_by_id('desig').text
-            except:
-                designation = '--'
-            try:
-                company = resume.find_element_by_id('company').text.replace('@', '').strip()
-            except:
-                company = '--'
-            try:
-                location = resume.find_element_by_class_name('info_loc').text
-            except:
-                location = '--'
-            try:
-                nationality = resume.find_element_by_class_name('nationality').text
-            except:
-                nationality = '--'
-            try:
-                first_header = list(
-                    resume.find_element_by_class_name('profile_profess').find_elements_by_tag_name('div'))
-                notice_period = first_header[0].text.split('\n')[1]
-                total_experince = first_header[1].text.split('\n')[1]
-                current_ctc = first_header[2].text.split('\n')[1]
-            except Exception as e:
-                notice_period = '--'
-                total_experince = '--'
-                current_ctc = '--'
-                print(e)
-
-            skills, pre_location, education, industry, roles, functions = '--', '--', '--', '--', '--', '--'
-
-            try:
-                info_soup = BeautifulSoup(resume.find_element_by_class_name('profile_skill').get_attribute('innerHTML'),
-                                          'lxml')
-                for info_type in info_soup.find_all('div', {'class': 'skillType'}):
-                    info_type_text = info_type.text.strip()
-                    if 'Skills' in info_type_text:
-                        skills = info_type.findNext('div').text.strip()
-                    elif 'Location' in info_type_text:
-                        pre_location = info_type.findNext('div').text.strip()
-                    elif 'Education' in info_type_text:
-                        education = info_type.findNext('div').text.strip()
-                    elif 'Industry' in info_type_text:
-                        industry = info_type.findNext('div').text.strip()
-                    elif 'Function' in info_type_text:
-                        functions = info_type.findNext('div').text.strip()
-                    elif 'Role' in info_type_text:
-                        roles = info_type.findNext('div').text.strip()
-
-            except Exception as e:
-                print(e)
-                pass
-
-            try:
-                info = resume.find_element_by_class_name('resumeitem_footer').find_element_by_class_name(
-                    'textfoot').text.strip()
-                info_list = info.split('|')
-                active_on = info_list[0].replace('Active on: ', '').strip()
-                updated_on = info_list[1].replace('Updated: ', '').strip()
-            except Exception as e:
-                print('Active : ', e)
-                active_on = '--'
-                updated_on = '--'
-
-            my_dict = {'name': name, 'resume_id': resume_id, 'education': education, 'location': location,
-                       'total_experience': total_experince, 'notice_period': notice_period, 'designation': designation,
-                       'company': company, 'current_ctc': current_ctc, 'heading': heading, 'roles': roles,
-                       'functions': functions, 'skills': skills, 'industry': industry, 'pre_location': pre_location,
-                       'nationality': nationality, 'active_on': active_on, 'updated_on': updated_on, 'link': link}
-            if resume_id not in all_resume_id:
-                try:
-                    writer.writerow(my_dict)
-                except:
-                    errors += 1
-                    print(errors)
-            else:
-                duplicates +=1
-            if ((r_index / len(resumes))*100) % 25 == 0:
-                print("\t{} %".format((r_index / len(resumes))*100))
-
-        next_page = page_number + 1
-        try:
-            driver.find_element_by_xpath("//a[@id='next_but']").click()
-        except Exception as e:
-            print(e)
-            input('Click to page {} and press ENTER : '.format(next_page))
-    print("Duplicates : ", duplicates)
-    print("Errors : ", errors)
-    csv_file.close()
-    all_data_csv.close()
-    get_profiles()
-
-
 #   GLOBAL SECTION
-
-task = get_int_input("Press 1 for Search | 2 for Folder : ")
-if task == 1:
-    get_page()
-elif task == 2:
-    get_page_folder()
+get_page()
 
 try:
     driver.get('http://recruiter.monsterindia.com/v2/logout.html')
 except:
     input('Logout and press ENTER : ')
 time.sleep(0.5)
-
 driver.close()
+
 try:
-    os.rmdir(base_path+file_name + '-{}.csv'.format(datetime.date.today()))
+    os.rmdir(file_path)
 except Exception as e:
     print(e)
     print('previous file cannot be deleted')
